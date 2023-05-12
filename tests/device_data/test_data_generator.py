@@ -19,8 +19,7 @@ def btns_generic_test_data(src, mask=0xFFFFFFFF):
             br_all |= bit(br_btns)
     test_data[src_all] = br_all
 
-    for src_btns, br_btns in test_data.items():
-        yield (src_btns, br_btns)
+    yield from test_data.items()
 
 
 def btns_generic_to_wired_test_data(src, dst, mask=0xFFFFFFFF):
@@ -35,8 +34,7 @@ def btns_generic_to_wired_test_data(src, dst, mask=0xFFFFFFFF):
             dst_all |= dst[br_btns]
     test_data[src_all] = dst_all
 
-    for src_btns, dst_btns in test_data.items():
-        yield (src_btns, dst_btns)
+    yield from test_data.items()
 
 
 def axes_test_data_generator(src, dst, dz):
@@ -48,11 +46,7 @@ def axes_test_data_generator(src, dst, dz):
     test_data = [{}, {}, {}, {}, {}, {}, {}]
     for axis, _ in src.items():
         if axis in dst:
-            if axis in (ax.LY, ax.RX):
-                sign = [-1, 1]
-            else:
-                sign = [1, -1]
-
+            sign = [-1, 1] if axis in (ax.LY, ax.RX) else [1, -1]
             if 'polarity' in src[axis] and src[axis]['polarity']:
                 src_sign = [sign[1], sign[0]]
             else:
@@ -148,5 +142,4 @@ def axes_test_data_generator(src, dst, dz):
                 'wired': dst_neutral,
             }
 
-    for test in test_data:
-        yield test
+    yield from test_data

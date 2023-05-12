@@ -113,8 +113,11 @@ def find_device(trace):
             bd_addr = raw(pkt[Raw])[3:9]
             mode = "BR/EDR"
             break
-        if (pkt.haslayer(bt.HCI_Event_LE_Meta) and pkt.haslayer(Raw) and
-                (pkt[bt.HCI_Event_LE_Meta].event == 0x01 or pkt[bt.HCI_Event_LE_Meta].event == 0x0A)):
+        if (
+            pkt.haslayer(bt.HCI_Event_LE_Meta)
+            and pkt.haslayer(Raw)
+            and pkt[bt.HCI_Event_LE_Meta].event in [0x01, 0x0A]
+        ):
             handle = struct.unpack("<H", raw(pkt[Raw])[1:3])[0]
             bd_addr = raw(pkt[Raw])[5:11]
             mode = "LE"
@@ -136,13 +139,19 @@ def find_device_name_bredr(trace, bd_addr):
 
 
 def find_device_name_le(trace, bd_addr):
-    name = None
-    for pkt in trace:
-        if (pkt.haslayer(bt.HCI_Event_LE_Meta) and pkt[bt.HCI_Event_LE_Meta].event == 0x0D and
-                raw(pkt[Raw])[4:10] == bd_addr and raw(pkt[Raw])[26] == 0x08):
-            name = raw(pkt[Raw])[27:27 + raw(pkt[Raw])[25]].decode()[:19]
-            break
-    return name
+    return next(
+        (
+            raw(pkt[Raw])[27 : 27 + raw(pkt[Raw])[25]].decode()[:19]
+            for pkt in trace
+            if (
+                pkt.haslayer(bt.HCI_Event_LE_Meta)
+                and pkt[bt.HCI_Event_LE_Meta].event == 0x0D
+                and raw(pkt[Raw])[4:10] == bd_addr
+                and raw(pkt[Raw])[26] == 0x08
+            )
+        ),
+        None,
+    )
 
 
 def find_hid_desc_att_handle(trace, handle):
@@ -165,10 +174,11 @@ def find_hid_report_att_handle(trace, handle):
         if (pkt.haslayer(bt.HCI_ACL_Hdr) and pkt.handle == handle and
                 pkt.haslayer(bt.ATT_Read_By_Type_Response) and
                 pkt[bt.ATT_Read_By_Type_Response].len == 7):
-            for attribute in pkt[bt.ATT_Read_By_Type_Response].handles:
-                if attribute.value[3:5] == b'\x4d\x2a':
-                    reports.append([attribute.handle, 0xFFFF, 0, 0, 0])
-
+            reports.extend(
+                [attribute.handle, 0xFFFF, 0, 0, 0]
+                for attribute in pkt[bt.ATT_Read_By_Type_Response].handles
+                if attribute.value[3:5] == b'\x4d\x2a'
+            )
     for idx, report in enumerate(reports):
         if idx > 0:
             reports[idx - 1][1] = report[0]
@@ -199,10 +209,7 @@ def find_hid_report_att_handle(trace, handle):
                 reports[report_id][4] = pkt[bt.ATT_Read_Response].value[1]
                 process_rsp = 0
                 continue
-    ret = []
-    for report in reports:
-        ret.append(Report(*report))
-    return ret
+    return [Report(*report) for report in reports]
 
 
 def hid_report_generator_bredr(trace, handle):
@@ -212,11 +219,14 @@ def hid_report_generator_bredr(trace, handle):
         if (pkt.haslayer(bt.HCI_ACL_Hdr) and pkt.handle == handle and
                 pkt.haslayer(bt.L2CAP_ConnReq) and pkt.psm == 0x0013):
             hid_intr_scid = pkt.scid
-        if (hid_intr_scid and pkt.haslayer(bt.L2CAP_Hdr) and pkt.cid == hid_intr_scid and
-                raw(pkt[Raw])[0] == 0xA1):
-            if prev_pkt != raw(pkt[Raw]):
-                yield raw(pkt[Raw])
-                prev_pkt = raw(pkt[Raw])
+        if (
+            hid_intr_scid
+            and pkt.haslayer(bt.L2CAP_Hdr)
+            and pkt.cid == hid_intr_scid
+            and raw(pkt[Raw])[0] == 0xA1
+        ) and prev_pkt != raw(pkt[Raw]):
+            yield raw(pkt[Raw])
+            prev_pkt = raw(pkt[Raw])
 
 
 def hid_report_generator_le(trace, handle, meta):
@@ -249,22 +259,14 @@ def main():
     mode, bd_addr, handle = find_device(rtrace)
 
     if mode == "BR/EDR":
-        # Find device name
-        name = find_device_name_bredr(rtrace, bd_addr)
-
-        # Send name to BR
-        if name:
+        if name := find_device_name_bredr(rtrace, bd_addr):
             bri.send_name(name)
             bri.get_logs()
 
         # Reassemble SDP data
         sdp_data = reassemble_sdp_data(rtrace, handle)
 
-        # Find HID descriptor
-        hid_desc = extract_hid_desc(sdp_data)
-
-        # Send HID descriptor to BR
-        if hid_desc:
+        if hid_desc := extract_hid_desc(sdp_data):
             bri.send_hid_desc(hid_desc.hex())
             bri.get_logs()
 
@@ -276,11 +278,7 @@ def main():
             bri.get_logs()
 
     elif mode == "LE":
-        # Find device name
-        name = find_device_name_le(trace, bd_addr)
-
-        # Send name to BR
-        if name:
+        if name := find_device_name_le(trace, bd_addr):
             bri.send_name(name)
             bri.get_logs()
 
@@ -290,11 +288,7 @@ def main():
         # Find reports handles, id & type
         reports_meta = find_hid_report_att_handle(rtrace, handle)
 
-        # Reassemble HID descriptor
-        hid_desc = reassemble_hid_desc(rtrace, handle, hid_desc_handle)
-
-        # Send HID descriptor to BR
-        if hid_desc:
+        if hid_desc := reassemble_hid_desc(rtrace, handle, hid_desc_handle):
             bri.send_hid_desc(hid_desc.hex())
             bri.get_logs()
 

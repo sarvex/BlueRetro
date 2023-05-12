@@ -17,8 +17,7 @@ class BlueRetroDut(BlueRetroInjector):
             while self.fd.in_waiting:
                 line = self.fd.readline().decode()
                 logging.debug(line)
-                match = re.search(pattern, line)
-                if match:
+                if match := re.search(pattern, line):
                     return match
             retry -= 1
             sleep(0.01)
